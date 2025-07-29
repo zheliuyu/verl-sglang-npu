@@ -59,6 +59,7 @@ from verl.third_party.sglang import parallel_state as sglang_ps
 from verl.tools.base_tool import BaseTool
 from verl.tools.schemas import OpenAIFunctionCallSchema, OpenAIFunctionParsedSchema, OpenAIFunctionToolCall
 from verl.tools.utils.tool_registry import initialize_tools_from_config
+from verl.utils.device import get_visible_devices
 from verl.utils.net_utils import is_ipv6
 from verl.utils.profiler import GPUMemoryLogger
 from verl.utils.torch_functional import get_response_mask, pad_sequence_to_length
@@ -362,11 +363,12 @@ class SGLangRollout(BaseRollout):
         # get tp_rank of this process in this tp group
         visible_devices = [None] * self._device_mesh_cpu.size(1)
 
+        visible_devices = get_visible_devices()
         torch.distributed.all_gather_object(
-            visible_devices, os.environ["CUDA_VISIBLE_DEVICES"], self._device_mesh_cpu.get_group("tp")
+            visible_devices, os.environ[visible_devices], self._device_mesh_cpu.get_group("tp")
         )
         self.visible_devices_set = set(",".join(visible_devices).split(","))
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(sorted(list(self.visible_devices_set)))
+        os.environ[visible_devices] = ",".join(sorted(list(self.visible_devices_set)))
 
     def _verify_config(self, model_hf_config):
         if not self.config.get("max_model_len", None):
