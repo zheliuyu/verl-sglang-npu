@@ -34,7 +34,7 @@ from torch.distributed.tensor import DTensor
 
 from verl import DataProto
 from verl.protocol import all_gather_data_proto
-from verl.utils.device import get_device_id, get_torch_device
+from verl.utils.device import get_device_id, get_torch_device, get_device_name
 from verl.utils.fsdp_utils import fsdp_version, load_fsdp_model_to_gpu, offload_fsdp_model_to_cpu
 from verl.utils.model import convert_weight_keys
 from verl.utils.profiler import GPUMemoryLogger, log_gpu_memory_usage, simple_timer
@@ -124,10 +124,17 @@ class FSDPSGLangShardingManager(BaseShardingManager):
             # On each rank, serialize a batch of (name, tensor) tuples.
             # named_tensors_batch will be a list like:
             # [(name0, serialized_tensor0_tp0), (name1, serialized_tensor1_tp0), ...]
-            named_tensors_batch = [
-                (name, MultiprocessingSerializer.serialize(_preprocess_tensor_for_update_weights(tensor)))
-                for name, tensor in batch
-            ]
+            device_name = get_device_name()
+            if device_name == "cuda":
+                named_tensors_batch = [
+                    (name, MultiprocessingSerializer.serialize(_preprocess_tensor_for_update_weights(tensor)))
+                    for name, tensor in batch
+                ]
+            elif device_name == "npu":
+                named_tensors_batch = [
+                    (name, MultiprocessingSerializer.serialize(_preprocess_tensor_for_update_weights(tensor).to("cpu")))
+                    for name, tensor in batch
+                ]
 
             if self.device_mesh["infer_tp"].get_local_rank() == 0:
                 # On rank 0, prepare a list to hold the gathered batches from all ranks.

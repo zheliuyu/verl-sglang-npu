@@ -59,7 +59,7 @@ from verl.third_party.sglang import parallel_state as sglang_ps
 from verl.tools.base_tool import BaseTool
 from verl.tools.schemas import OpenAIFunctionCallSchema, OpenAIFunctionParsedSchema, OpenAIFunctionToolCall
 from verl.tools.utils.tool_registry import initialize_tools_from_config
-from verl.utils.device import get_visible_devices
+from verl.utils.device import get_visible_devices, get_device_name
 from verl.utils.net_utils import is_ipv6
 from verl.utils.profiler import GPUMemoryLogger
 from verl.utils.torch_functional import get_response_mask, pad_sequence_to_length
@@ -439,34 +439,55 @@ class SGLangRollout(BaseRollout):
         if first_rank_in_node:
             rank = dist.get_rank()
             os.environ["SGLANG_BLOCK_NONZERO_RANK_CHILDREN"] = "0"
-            self._engine = AsyncEngine(
-                model_path=actor_module,
-                dtype=self.config.dtype,
-                mem_fraction_static=self.config.gpu_memory_utilization,
-                enable_memory_saver=True,
-                base_gpu_id=0,
-                gpu_id_step=1,
-                tp_size=self._tp_size,
-                node_rank=node_rank,
-                load_format=load_format,
-                dist_init_addr=dist_init_addr,
-                nnodes=nnodes,
-                trust_remote_code=trust_remote_code,
-                # NOTE(linjunrong): add rank to prevent SGLang generate same port inside PortArgs.init_new
-                # when random.seed is being set during training
-                port=30000 + rank,
-                # NOTE(Chenyang): if you want to debug the SGLang engine output
-                # please set the following parameters
-                # Otherwise, it will make the engine run too slow
-                # log_level="INFO",
-                # log_requests=True,
-                # log_requests_level=2,
-                # max_running_requests=1,
-                mm_attention_backend="fa3",
-                attention_backend="fa3",
-                # In async mode, we want token in token out.
-                skip_tokenizer_init=self.config.mode == "async",
-            )
+            device_name=get_device_name()
+            if device_name=="cuda":
+                self._engine = AsyncEngine(
+                    model_path=actor_module,
+                    dtype=self.config.dtype,
+                    mem_fraction_static=self.config.gpu_memory_utilization,
+                    enable_memory_saver=True,
+                    base_gpu_id=0,
+                    gpu_id_step=1,
+                    tp_size=self._tp_size,
+                    node_rank=node_rank,
+                    load_format=load_format,
+                    dist_init_addr=dist_init_addr,
+                    nnodes=nnodes,
+                    trust_remote_code=trust_remote_code,
+                    # NOTE(linjunrong): add rank to prevent SGLang generate same port inside PortArgs.init_new
+                    # when random.seed is being set during training
+                    port=30000 + rank,
+                    # NOTE(Chenyang): if you want to debug the SGLang engine output
+                    # please set the following parameters
+                    # Otherwise, it will make the engine run too slow
+                    # log_level="INFO",
+                    # log_requests=True,
+                    # log_requests_level=2,
+                    # max_running_requests=1,
+                    mm_attention_backend="fa3",
+                    attention_backend="fa3",
+                    # In async mode, we want token in token out.
+                    skip_tokenizer_init=self.config.mode == "async",
+                )
+            elif device_name=="npu":
+                self._engine = AsyncEngine(
+                        model_path=actor_module,
+                        dtype=self.config.dtype,
+                        mem_fraction_static=self.config.gpu_memory_utilization,
+                        enable_memory_saver=False,
+                        base_gpu_id=0,
+                        gpu_id_step=1,
+                        tp_size=self._tp_size,
+                        node_rank=node_rank,
+                        load_format=load_format,
+                        dist_init_addr=dist_init_addr,
+                        nnodes=nnodes,
+                        trust_remote_code=trust_remote_code,
+                        port=30000 + rank,
+                        # NOTE: if you want to debug the SGLang engine output
+                        # please set the parameters as device_name=="cuda".
+                        attention_backend="ascend",
+                    )
         else:
             self._engine = None
 
